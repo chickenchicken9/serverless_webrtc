@@ -133,7 +133,7 @@
             }, err => {
                 console.error('Couldn\'t create answer:', err);
             }, { optional: [{ RtpDataChannels: true }] });
-            
+
             document.getElementById('send-client').onclick = () => {
                 const msg = document.getElementById('textarea-client').value;
                 dataChannel.send(msg);
