@@ -1,9 +1,158 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Serverless WebRTC Example</title>
-    </head>
-    <body>
-        <h1>Serverless WebRTC Example</h1>
-    </body>
+
+<head>
+    <title>Serverless WebRTC Example</title>
+    <style>
+        textarea {
+            width: 100%;
+            height: 100px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Serverless WebRTC Example</h1>
+    <div id="host">
+        <h2>I am the Host</h2>
+        <p>Send this URL to the client: <button id="copy-client">Copy URL</button></p>
+        <p>Or, <a id="link-host" target="none">open the client directly in a new tab</a>.</p>
+        </p>
+        <textarea id="textarea-host" placeholder="Generating params for client..."></textarea>
+        <button id="send-host">Send message to client</button>
+    </div>
+
+    <div id="client">
+        <h2>I am the Client</h2>
+        <p>
+            Send this text to the host:
+            <button id="copy-host">Copy text</button>
+        </p>
+        <textarea id="textarea-client" placeholder="Generating params for host..."></textarea>
+        <button id="send-client">Send message to host</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <script>
+        function printMsg(msg) {
+            const p = document.createElement('p');
+            p.innerText = msg;
+            document.getElementById('messages').prepend(p);
+        }
+
+        function setUpHost() {
+            let clientUrl = new URL(window.location.href);
+            document.getElementById('copy-client').onclick = () => {
+                navigator.clipboard.writeText(clientUrl);
+                document.getElementById('textarea-host').placeholder =
+                    "Copy params from the client into here!";
+            };
+            document.getElementById('link-host').onclick = () => {
+                document.getElementById('textarea-host').placeholder =
+                    "Copy params from the client into here!";
+            };
+
+            const rtcPeer = new RTCPeerConnection();
+            rtcPeer.onicecandidate = (e) => {
+                if (e.candidate) return; // huh?
+
+                clientUrl.searchParams.set('host', JSON.stringify(rtcPeer.localDescription));
+                document.getElementById('textarea-host').placeholder = clientUrl;
+                document.getElementById('link-host').href = clientUrl;
+                console.log('ready to copy!');
+            };
+            rtcPeer.oniceconnectionstatechange = (e) => {
+                console.log('oniceconnectionstatechange: ' + rtcPeer.state);
+            };
+
+            const dataChannel = rtcPeer.createDataChannel('dataaa');
+            rtcPeer.createOffer().then(e => {
+                rtcPeer.setLocalDescription(e);
+            });
+            dataChannel.onopen = () => {
+                console.log('data channel connected');
+            };
+            dataChannel.onmessage = (e) => {
+                console.log('got message:', e);
+                printMsg('Client: ' + e.data);
+            };
+
+            document.getElementById('textarea-host').onpaste = e => {
+                const clientParams = JSON.parse(atob(e.clipboardData.getData('text')));
+                rtcPeer.setRemoteDescription(new RTCSessionDescription(clientParams));
+                console.info("Connecting...", clientParams);
+                e.preventDefault();  // Keep field empty
+                document.getElementById('textarea-host').placeholder = 'Write a message to the client';
+            };
+
+            document.getElementById('send-host').onclick = () => {
+                const msg = document.getElementById('textarea-host').value;
+                dataChannel.send(msg);
+                printMsg('Host: ' + msg);
+                document.getElementById('textarea-host').value = '';
+            };
+        }
+
+        function setUpClient() {
+            let paramsForHost = '';
+            document.getElementById('copy-host').onclick = () => {
+                navigator.clipboard.writeText(paramsForHost);
+                document.getElementById('textarea-client').placeholder = 'Waiting for host...';
+            };
+
+            const rtcPeer = new RTCPeerConnection();
+            let dataChannel;
+            rtcPeer.ondatachannel = (e) => {
+                dataChannel = e.channel;
+                dataChannel.onopen = () => {
+                    console.log('data channel opened');
+                    document.getElementById('textarea-client').placeholder = 'Write a message to the host';
+                };
+                dataChannel.onmessage = e => {
+                    console.info('got message:', e);
+                    printMsg('Host: ' + e.data);
+                };
+            };
+            rtcPeer.onicecandidate = (e) => {
+                if (e.candidate) return; // huh?
+
+                paramsForHost = btoa(JSON.stringify(rtcPeer.localDescription));
+                document.getElementById('textarea-client').placeholder = paramsForHost;
+                console.log('ready to copy!');
+            };
+            rtcPeer.oniceconnectionstatechange = (e) => {
+                console.log('oniceconnectionstatechange: ' + rtcPeer.state);
+            };
+
+            const hostParams = JSON.parse(new URL(window.location.href).searchParams.get('host'));
+            const offerDesc = new RTCSessionDescription(hostParams);
+            rtcPeer.setRemoteDescription(offerDesc);
+            rtcPeer.createAnswer(a => {
+                rtcPeer.setLocalDescription(a);
+            }, err => {
+                console.error('Couldn\'t create answer:', err);
+            }, { optional: [{ RtpDataChannels: true }] });
+            
+            document.getElementById('send-client').onclick = () => {
+                const msg = document.getElementById('textarea-client').value;
+                dataChannel.send(msg);
+                printMsg('Client: ' + msg);
+                document.getElementById('textarea-client').value = '';
+            };
+        }
+
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('host')) {
+            // We are the client. Hide host section.
+            document.getElementById('host').style.display = 'none';
+            setUpClient();
+        } else {
+            // We are the host. Hide client section.
+            document.getElementById('client').style.display = 'none';
+            setUpHost();
+        }
+    </script>
+</body>
+
 </html>
